@@ -5,29 +5,32 @@
 #'
 #'
 #' @param g Numeric vector with pool sizes, i.e. number of members in each pool.
-#'
 #' @param y Numeric vector with poolwise \code{Y} values, coded 0 if all members
 #' are controls and 1 if all members are cases.
-#'
 #' @param x Numeric matrix with poolwise \strong{\code{X}} values, with one row
 #' for each pool. Can be a vector if there is only 1 predictor.
-#'
 #' @param method Character string specifying method to use for estimation.
 #' Choices are "glm" for \code{\link[stats]{glm}} function and \code{"ml"} for
 #' maximum likelihood.
-#'
 #' @param prev Numeric value specifying disease prevalence, allowing
 #' for valid estimation of the intercept with case-control sampling. Can specify
 #' \code{samp_y1y0} instead if sampling rates are known.
-#'
 #' @param samp_y1y0 Numeric vector of length 2 specifying sampling probabilities
 #' for cases and controls, allowing for valid estimation of the intercept with
 #' case-control sampling. Can specify \code{prev} instead if it's easier.
-#'
 #' @param estimate_var Logical value for whether to return variance-covariance
 #' matrix for parameter estimates.
-#'
-#' @param ... Additional arguments to pass to \code{\link[stats]{nlminb}}.
+#' @param start Numeric value specifying starting values for parameters. Only
+#' used if \code{method = "ml"}.
+#' @param lower Numeric value specifying lower bounds for parameters. Only used
+#' if \code{method = "ml"}.
+#' @param upper Numeric value specifying upper bounds for parameters. Only used
+#' if \code{method = "ml"}.
+#' @param nlminb_list List of arguments to pass to \code{\link[stats]{nlminb}}
+#' for log-likelihood maximization.
+#' @param hessian_list List of arguments to pass to
+#' \code{\link[numDeriv]{hessian}} for approximating the Hessian matrix. Only
+#' used if \code{method = "ml"} and \code{estimate_var = TRUE}.
 #'
 #'
 #' @return
@@ -62,9 +65,20 @@
 #'
 #'
 #' @export
-p_logreg <- function(g, y, x,
-                     method = "glm", prev = NULL, samp_y1y0 = NULL,
-                     estimate_var = TRUE, ...) {
+p_logreg <- function(
+  g,
+  y,
+  x,
+  method = "glm",
+  prev = NULL,
+  samp_y1y0 = NULL,
+  estimate_var = TRUE,
+  start = 0.01,
+  lower = -Inf,
+  upper = Inf,
+  nlminb_list = list(control = list(trace = 1, eval.max = 500, iter.max = 500)),
+  hessian_list = list(method.args = list(r = 4))
+) {
 
   # Check that inputs are valid
   if (! method %in% c("glm", "ml")) {
@@ -87,7 +101,7 @@ p_logreg <- function(g, y, x,
 
   # Get number of X variables (and assign names)
   x.varname <- deparse(substitute(x))
-  if (class(x) != "matrix") {
+  if (! is.matrix(x)) {
     x <- as.matrix(x)
   }
   n.xvars <- ncol(x)
@@ -180,7 +194,7 @@ p_logreg <- function(g, y, x,
 
     # Log-likelihood function
     n.betas <- length(beta.labels)
-    ll.f <- function(f.theta) {
+    llf <- function(f.theta) {
 
       # Likelihood:
       # L_i = f(Y|X)
@@ -195,21 +209,18 @@ p_logreg <- function(g, y, x,
 
     }
 
-    # Create list of extra arguments, and assign default starting values and
-    # lower values if not specified by user
-    extra.args <- list(...)
-    if (is.null(extra.args$start)) {
-      extra.args$start <- rep(0.01, n.betas)
-    }
-    if (is.null(extra.args$lower)) {
-      extra.args$lower <- rep(-Inf, n.betas)
-    }
-    if (is.null(extra.args$control$rel.tol)) {
-      extra.args$control$rel.tol <- 1e-6
-    }
-
     # Obtain ML estimates
-    ml.max <- do.call(nlminb, c(list(objective = ll.f), extra.args))
+    ml.max <- do.call(nlminb,
+                      c(list(start = rep(start, n.betas),
+                             objective = llf,
+                             lower = lower,
+                             upper = upper),
+                        nlminb_list))
+
+    # Output message if nlminb indicates non-convergence
+    if (ml.max$convergence == 1) {
+      message("Object returned by 'nlminb' function indicates non-convergence. You may want to try different starting values.")
+    }
 
     # Create list to return
     theta.hat <- ml.max$par
@@ -218,10 +229,17 @@ p_logreg <- function(g, y, x,
 
     # If requested, add variance-covariance matrix to ret.list
     if (estimate_var) {
-      hessian.mat <- pracma::hessian(f = ll.f, x0 = theta.hat)
+
+      # Estimate Hessian
+      hessian.mat <- do.call(numDeriv::hessian,
+                             c(list(func = llf, x = theta.hat),
+                               hessian_list))
+
+      # Estimate variance-covariance matrix
       theta.variance <- solve(hessian.mat)
       colnames(theta.variance) <- rownames(theta.variance) <- beta.labels
       ret.list$theta.var <- theta.variance
+
     }
 
     # Add nlminb object and AIC to ret.list

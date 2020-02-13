@@ -1,30 +1,29 @@
 #' Discriminant Function Approach for Estimating Odds Ratio with Normal Exposure
-#' Measured in Pools and Subject to Errors
+#' Measured in Pools and Potentially Subject to Errors
 #'
-#' Assumes exposure measurements are subject to additive normal processing error
-#' and measurement error, and exposure given covariates and outcome is a
-#' normal-errors linear regression.
+#' Archived on 7/23/18. Please use \code{\link{p_ndfa}} instead.
 #'
 #'
-#' @inheritParams p_logreg_xerrors
-#'
+#' @param g Numeric vector of pool sizes, i.e. number of members in each pool.
 #' @param y Numeric vector of poolwise \code{Y} values (number of cases in each
 #' pool).
-#'
+#' @param xtilde Numeric vector (or list of numeric vectors, if some pools have
+#' replicates) with \code{Xtilde} values.
+#' @param c Numeric matrix with poolwise \strong{\code{C}} values (if any), with
+#' one row for each pool. Can be a vector if there is only 1 covariate.
 #' @param constant_or Logical value for whether to assume a constant OR for
 #' \code{X}, which means that \code{sigsq_1 = sigsq_0}. If \code{NULL}, model is
 #' fit with and without this assumption, and likelihood ratio test is performed
 #' to test it.
+#' @param errors Character string specifying the errors that \code{X} is subject
+#' to. Choices are \code{"neither"}, \code{"processing"} for processing error
+#' only, \code{"measurement"} for measurement error only, and \code{"both"}.
+#' @param ... Additional arguments to pass to \code{\link[stats]{nlminb}}.
 #'
 #'
 #' @return
-#' List of point estimates, variance-covariance matrix, objects returned by
-#' \code{\link[stats]{nlminb}}, and AICs, for one or two models depending on
-#' \code{constant_or}.
-#'
-#' @return
-#' List of point estimates, variance-covariance matrix, objects returned by
-#' \code{\link[stats]{nlminb}}, and AICs, for one or two models depending on
+#' List of point estimates, variance-covariance matrix, object returned by
+#' \code{\link[stats]{nlminb}}, and AIC, for one or two models depending on
 #' \code{constant_or}. If \code{constant_or = NULL}, also returns result of a
 #' likelihood ratio test for \code{H0: sigsq_1 = sigsq_0}, which is equivalent
 #' to \code{H0: log-OR is constant}. If \code{constant_or = NULL}, returned
@@ -73,9 +72,6 @@ p_dfa_xerrors <- function(g, y, xtilde, c = NULL,
          'measurement', or 'both'.")
   }
 
-  # Sample size
-  n <- length(y)
-
   # Get name of y input
   y.varname <- deparse(substitute(y))
   if (length(grep("$", y.varname, fixed = TRUE)) > 0) {
@@ -90,7 +86,7 @@ p_dfa_xerrors <- function(g, y, xtilde, c = NULL,
     n.cvars <- 0
   } else {
     c.varname <- deparse(substitute(c))
-    if (class(c) != "matrix") {
+    if (! is.matrix(c)) {
       c <- as.matrix(c)
     }
     n.cvars <- ncol(c)
@@ -109,16 +105,24 @@ p_dfa_xerrors <- function(g, y, xtilde, c = NULL,
     }
   }
 
+  # Sample size
+  n <- length(y)
+
   # Get number of gammas
   n.gammas <- 2 + n.cvars
 
   # Create vector indicating which observations are pools
   Ig <- ifelse(g > 1, 1, 0)
 
-  # Create matrix of (g, Y, C) values
+  # Construct (g, Y, C) matrix
   gyc <- cbind(g, y, c)
 
-  # Separate into replicate and singles
+  # If no measurement error and xtilde is a list, just use first measurements
+  if (errors %in% c("neither", "processing") & class(xtilde) == "list") {
+    xtilde <- sapply(xtilde, function(x) x[1])
+  }
+
+  # Separate out subjects with replicates
   class.xtilde <- class(xtilde)
   if (class.xtilde == "list") {
     k <- sapply(xtilde, length)
@@ -244,7 +248,8 @@ p_dfa_xerrors <- function(g, y, xtilde, c = NULL,
 
         # Log-likelihood
         ll.s <- sum(dnorm(x = xtilde, log = TRUE,
-                          mean = mu_xtilde.yc, sd = sqrt(sigsq_xtilde.yc)))
+                          mean = mu_xtilde.yc,
+                          sd = sqrt(sigsq_xtilde.yc)))
 
       } else {
         ll.s <- 0
@@ -292,9 +297,9 @@ p_dfa_xerrors <- function(g, y, xtilde, c = NULL,
     ml.estimates <- ml.max1$par
 
     # Variance estimates
-    hessian.mat <- pracma::hessian(f = ll.f1, x0 = ml.estimates)
+    hessian.mat <- numDeriv::hessian(func = ll.f1, x = ml.estimates)
     theta.variance <- try(solve(hessian.mat), silent = TRUE)
-    if (class(theta.variance) == "try-error") {
+    if (class(theta.variance)[1] == "try-error") {
       message("Estimated Hessian matrix is singular, so variance-covariance matrix cannot be obtained.")
       theta.variance <- NULL
     } else {
@@ -431,9 +436,9 @@ p_dfa_xerrors <- function(g, y, xtilde, c = NULL,
     logOR.hat <- gamma_y.hat / sigsq.hat
 
     # Estimate variance of logOR.hat and perform bias adjustment
-    hessian.mat <- pracma::hessian(f = ll.f2, x0 = ml.estimates)
+    hessian.mat <- numDeriv::hessian(func = ll.f2, x = ml.estimates)
     theta.variance <- try(solve(hessian.mat), silent = TRUE)
-    if (class(theta.variance) == "try-error") {
+    if (class(theta.variance)[1] == "try-error" | sum(is.na(hessian.mat)) > 0) {
       message("Estimated Hessian matrix is singular, so variance-covariance matrix cannot be obtained and bias adjustment cannot be applied.")
       theta.variance <- NULL
       logOR.var <- logOR.var <- logOR_adj.hat <- logOR_adj.var <- NA

@@ -5,14 +5,21 @@
 \title{Visualize Ratio of Variance of Each Pooled Measurement to Variance of Each
 Unpooled Measurement as Function of Pool Size}
 \usage{
-poolvar_t(g = 1:10, sigsq = 1, sigsq_p = 0, sigsq_m = 0,
-  multiplicative = FALSE, mu = 1, type = "two.sample", assay_cost = 100,
-  other_costs = 0, labels = TRUE, ylim = NULL)
+poolvar_t(g = 1:10, mu1 = NULL, mu2 = NULL, sigsq = NULL,
+  sigsq1 = sigsq, sigsq2 = sigsq, sigsq_p = 0, sigsq_m = 0,
+  multiplicative = FALSE, assay_cost = 100, other_costs = 0,
+  labels = TRUE, ylim = NULL)
 }
 \arguments{
 \item{g}{Numeric vector of pool sizes to include.}
 
+\item{mu1, mu2}{Numeric value specifying group means. Required if
+\code{multiplicative = TRUE}.}
+
 \item{sigsq}{Numeric value specifying the variance of observations.}
+
+\item{sigsq1, sigsq2}{Numeric value specifying the variance of observations
+for each group.}
 
 \item{sigsq_p}{Numeric value specifying the variance of processing errors.}
 
@@ -20,12 +27,6 @@ poolvar_t(g = 1:10, sigsq = 1, sigsq_p = 0, sigsq_m = 0,
 
 \item{multiplicative}{Logical value for whether to assume multiplicative
 rather than additive errors.}
-
-\item{mu}{Numeric value specifying the larger of the two suspected means.
-Only used if \code{multiplicative = TRUE}.}
-
-\item{type}{Character string specifying type of t-test. Choices are
-\code{"two.sample"}, \code{"one.sample"}, and \code{"paired"}.}
 
 \item{assay_cost}{Numeric value specifying cost of each assay.}
 
@@ -44,10 +45,10 @@ optimal pool size if it is.
 }
 \examples{
 # Plot ratio of variances vs. pool size with default settings
-poolvar_t()
+poolvar_t(sigsq = 1)
 
 # Add processing error and other per-subject costs
-poolvar_t(sigsq_p = 0.2, other_costs = 0.1)
+poolvar_t(sigsq = 1, sigsq_p = 0.2, other_costs = 0.1)
 
 
 }

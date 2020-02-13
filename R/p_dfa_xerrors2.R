@@ -1,24 +1,36 @@
 #' Discriminant Function Approach for Estimating Odds Ratio with Gamma Exposure
-#' Measured in Pools and Subject to Errors
+#' Measured in Pools and Potentially Subject to Errors
 #'
-#' Assumes exposure measurements are subject to multiplicative lognormal
-#' processing error and measurement error, and exposure given covariates and
-#' outcome is a Gamma regression.
+#' Archived on 7/23/18. Please use \code{\link{p_gdfa}} instead.
 #'
 #'
-#' @inheritParams p_dfa_xerrors
-#' @inheritParams p_logreg_xerrors
-#'
+#' @param g Numeric vector with pool sizes, i.e. number of members in each pool.
 #' @param y Numeric vector with poolwise \code{Y} values, coded 0 if all members
 #' are controls and 1 if all members are cases.
-#'
+#' @param xtilde Numeric vector (or list of numeric vectors, if some pools have
+#' replicates) with \code{Xtilde} values.
+#' @param c List where each element is a numeric matrix containing the
+#' \strong{\code{C}} values for members of a particular pool (1 row for each
+#' member).
 #' @param constant_or Logical value for whether to assume a constant OR for
 #' \code{X}, which means that \code{gamma_y = 0}. If \code{NULL}, model is
 #' fit with and without this assumption, and likelihood ratio test is performed
 #' to test it.
-#'
+#' @param errors Character string specifying the errors that \code{X} is subject
+#' to. Choices are \code{"neither"}, \code{"processing"} for processing error
+#' only, \code{"measurement"} for measurement error only, and \code{"both"}.
 #' @param integrate_tol Numeric value specifying the \code{tol} input to
-#' \code{\link{adaptIntegrate}}.
+#' \code{\link{hcubature}}.
+#' @param integrate_tol_hessian Same as \code{integrate_tol}, but for use when
+#' estimating the Hessian matrix only. Sometimes more precise integration
+#' (i.e. smaller tolerance) helps prevent cases where the inverse Hessian is not
+#' positive definite.
+#' @param estimate_var Logical value for whether to return variance-covariance
+#' matrix for parameter estimates.
+#' @param fix_posdef Logical value for whether to repeatedly reduce
+#' \code{integrate_tol_hessian} by factor of 5 and re-estimate Hessian to try
+#' to avoid non-positive definite variance-covariance matrix.
+#' @param ... Additional arguments to pass to \code{\link[stats]{nlminb}}.
 #'
 #'
 #' @return
@@ -51,32 +63,44 @@
 #'
 #'
 #' @examples
-#' # Load datasets - pdat2 has poolwise (Y, Xtilde) values and pdat2_c has
-#' # individual-level C values. Xtilde values are affected by processing error.
+#' # Load dataset with (g, Y, Xtilde, C) values for 248 pools and list of C
+#' # values for members of each pool. Xtilde values are affected by processing
+#' # error.
 #' data(pdat2)
-#' data(pdat2_c)
+#' dat <- pdat2$dat
+#' c.list <- pdat2$c.list
 #'
 #' # Estimate log-OR for X and Y adjusted for C, ignoring processing error
-#' fit1 <- p_dfa_xerrors2(g = pdat2$g, y = pdat2$y, xtilde = pdat2$xtilde,
-#'                        c = pdat2_c, errors = "neither")
+#' fit1 <- p_dfa_xerrors2(
+#'   g = dat$g,
+#'   y = dat$y,
+#'   xtilde = dat$xtilde,
+#'   c = c.list,
+#'   errors = "neither"
+#' )
 #' fit1$estimates
 #'
-#' # Repeat, but accounting for processing error. Takes about 5 minutes to run
-#' # due to numerical integration. Gives log-OR closer to true value of 0.5.
-#' # fit2 <- p_dfa_xerrors2(g = pdat2$g, y = pdat2$y, xtilde = pdat2$xtilde,
-#' #                        c = pdat2_c, errors = "processing",
-#' #                        control = list(trace = 1))
-#' # fit2$estimates
-#'
+#' # Repeat, but accounting for processing error.
+#' \dontrun{
+#' fit2 <- p_dfa_xerrors2(
+#'   g = dat$g,
+#'   y = dat$y,
+#'   xtilde = dat$xtilde,
+#'   c = c.list,
+#'   errors = "processing",
+#'   control = list(trace = 1)
+#' )
+#' fit2$estimates
+#' }
 #'
 #' @export
 p_dfa_xerrors2 <- function(g, y, xtilde, c = NULL,
                            constant_or = TRUE,
                            errors = "both",
                            integrate_tol = 1e-8,
-                           integrate_tol_start = integrate_tol,
                            integrate_tol_hessian = integrate_tol,
                            estimate_var = TRUE,
+                           fix_posdef = FALSE,
                            ...) {
 
   # Check that inputs are valid
@@ -89,9 +113,6 @@ p_dfa_xerrors2 <- function(g, y, xtilde, c = NULL,
   }
   if (! (is.numeric(integrate_tol) & inside(integrate_tol, c(1e-32, Inf)))) {
     stop("The input 'integrate_tol' must be a numeric value greater than 1e-32.")
-  }
-  if (! (is.numeric(integrate_tol_start) & inside(integrate_tol_start, c(1e-32, Inf)))) {
-    stop("The input 'integrate_tol_start' must be a numeric value greater than 1e-32.")
   }
   if (! (is.numeric(integrate_tol_hessian) & inside(integrate_tol_hessian, c(1e-32, Inf)))) {
     stop("The input 'integrate_tol_hessian' must be a numeric value greater than 1e-32.")
@@ -146,6 +167,11 @@ p_dfa_xerrors2 <- function(g, y, xtilde, c = NULL,
     onec <- lapply(c, function(x) cbind(1, x))
   } else {
     onec <- NULL
+  }
+
+  # If no measurement error and xtilde is a list, just use first measurements
+  if (errors %in% c("neither", "processing") & class(xtilde) == "list") {
+    xtilde <- sapply(xtilde, function(x) x[1])
   }
 
   # Separate out pools with precisely measured X
@@ -324,8 +350,6 @@ p_dfa_xerrors2 <- function(g, y, xtilde, c = NULL,
         # Get integration tolerance
         if (estimating.hessian) {
           int_tol <- integrate_tol_hessian
-        } else if (all(f.theta == extra.args$start)) {
-          int_tol <- integrate_tol_start
         } else {
           int_tol <- integrate_tol
         }
@@ -343,11 +367,11 @@ p_dfa_xerrors2 <- function(g, y, xtilde, c = NULL,
           a_i <- alphas[ii]
 
           int.ii <-
-            adaptIntegrate(f = int.f_i1a, tol = int_tol,
-                           lowerLimit = 0, upperLimit = 1,
-                           vectorInterface = TRUE,
-                           g_i = g_i, Ig_i = Ig_i, k_i = k_i, y_i = y_i,
-                           onec_i = onec_i, xtilde_i = xtilde_i, a_i = a_i)
+            hcubature(f = int.f_i1a, tol = int_tol,
+                      lowerLimit = 0, upperLimit = 1,
+                      vectorInterface = TRUE,
+                      g_i = g_i, Ig_i = Ig_i, k_i = k_i, y_i = y_i,
+                      onec_i = onec_i, xtilde_i = xtilde_i, a_i = a_i)
           int.vals[ii] <- int.ii$integral
 
           # If integral 0, set skip.rest to TRUE to skip further LL calculations
@@ -410,8 +434,6 @@ p_dfa_xerrors2 <- function(g, y, xtilde, c = NULL,
         # Get integration tolerance
         if (estimating.hessian) {
           int_tol <- integrate_tol_hessian
-        } else if (all(f.theta == extra.args$start)) {
-          int_tol <- integrate_tol_start
         } else {
           int_tol <- integrate_tol
         }
@@ -496,16 +518,40 @@ p_dfa_xerrors2 <- function(g, y, xtilde, c = NULL,
     theta.hat <- ml.max1$par
     names(theta.hat) <- theta.labels1
 
-    # Variance estimates
+    # If requested, add variance-covariance matrix to ret.list
     if (estimate_var) {
-      hessian.mat <- pracma::hessian(f = ll.f1, x0 = ml.estimates)
+
+      # Estimate Hessian
+      hessian.mat <- numDeriv::hessian(func = ll.f1, estimating.hessian = TRUE,
+                                       x = ml.estimates)
       theta.variance <- try(solve(hessian.mat), silent = TRUE)
-      if (class(theta.variance) == "try-error") {
+      if (class(theta.variance)[1] == "try-error" ||
+          ! all(eigen(x = theta.variance, only.values = TRUE)$values > 0)) {
+
+        # Repeatedly divide integrate_tol_hessian by 5 and re-try
+        while (integrate_tol_hessian > 1e-15 & fix_posdef) {
+          integrate_tol_hessian <- integrate_tol_hessian / 5
+          hessian.mat <- numDeriv::hessian(func = ll.f1, estimating.hessian = TRUE,
+                                           x = ml.estimates)
+          theta.variance <- try(solve(hessian.mat), silent = TRUE)
+          if (class(theta.variance)[1] != "try-error" &&
+              all(eigen(x = theta.variance, only.values = TRUE)$values > 0)) {
+            break
+          }
+
+        }
+      }
+
+      if (class(theta.variance)[1] == "try-error" ||
+          ! all(eigen(x = theta.variance, only.values = TRUE)$values > 0)) {
+
         message("Estimated Hessian matrix is singular, so variance-covariance matrix cannot be obtained.")
         theta.variance <- NULL
+
       } else {
         colnames(theta.variance) <- rownames(theta.variance) <- theta.labels1
       }
+
     } else {
       theta.variance <- NULL
     }
@@ -522,7 +568,7 @@ p_dfa_xerrors2 <- function(g, y, xtilde, c = NULL,
   if (is.null(constant_or) || constant_or) {
 
     # Log-likelihood function
-    ll.f2 <- function(f.theta) {
+    ll.f2 <- function(f.theta, estimating.hessian = FALSE) {
 
       # Extract parameters
       f.gammas <- matrix(f.theta[loc.gammas2], ncol = 1)
@@ -647,7 +693,7 @@ p_dfa_xerrors2 <- function(g, y, xtilde, c = NULL,
       if (some.i & ! skip.rest) {
 
         # Likelihood for pools with single Xtilde:
-        # L = \int_X f(Xtilde|X) f(X|Y,C_1,...,C_g)Y|X,C) dX
+        # L = \int_X f(Xtilde|X) f(X|Y,C_1,...,C_g) dX
 
         # a_i's to feed to integral
         if (some.cs) {
@@ -766,20 +812,48 @@ p_dfa_xerrors2 <- function(g, y, xtilde, c = NULL,
 
     # Estimate variance of logOR.hat
     if (estimate_var) {
-      hessian.mat <- pracma::hessian(f = ll.f2, x0 = ml.estimates)
+
+      # Estimate Hessian
+      hessian.mat <- numDeriv::hessian(func = ll.f2, estimating.hessian = TRUE,
+                                       x = ml.estimates)
       theta.variance <- try(solve(hessian.mat), silent = TRUE)
-      if (class(theta.variance) == "try-error") {
+      if (class(theta.variance)[1] == "try-error" ||
+          ! all(eigen(x = theta.variance, only.values = TRUE)$values > 0)) {
+
+        # Repeatedly divide integrate_tol_hessian by 5 and re-try
+        while (integrate_tol_hessian > 1e-15 & fix_posdef) {
+          integrate_tol_hessian <- integrate_tol_hessian / 5
+          hessian.mat <- numDeriv::hessian(func = ll.f2, estimating.hessian = TRUE,
+                                           x = ml.estimates)
+          theta.variance <- try(solve(hessian.mat), silent = TRUE)
+          if (class(theta.variance)[1] != "try-error" &&
+              all(eigen(x = theta.variance, only.values = TRUE)$values > 0)) {
+            break
+          }
+
+        }
+      }
+
+      if (class(theta.variance)[1] == "try-error" ||
+          ! all(eigen(x = theta.variance, only.values = TRUE)$values > 0)) {
+
         message("Estimated Hessian matrix is singular, so variance-covariance matrix cannot be obtained.")
         theta.variance <- NULL
         logOR.var <- NA
+
       } else {
+
         fprime <- matrix(c(1 / b1.hat^2, -1 / b0.hat^2), nrow = 1)
         colnames(theta.variance) <- rownames(theta.variance) <- theta.labels2
         logOR.var <- fprime %*% theta.variance[loc.bs2, loc.bs2] %*% t(fprime)
+
       }
+
     } else {
+
       theta.variance <- NULL
       logOR.var <- NA
+
     }
 
     # Create vector of estimates and calculate AIC

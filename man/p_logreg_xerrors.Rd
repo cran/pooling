@@ -4,26 +4,30 @@
 \alias{p_logreg_xerrors}
 \title{Poolwise Logistic Regression with Normal Exposure Subject to Errors}
 \usage{
-p_logreg_xerrors(g, y, xtilde, c = NULL, errors = "both",
-  nondiff_pe = TRUE, nondiff_me = TRUE, constant_pe = TRUE, prev = NULL,
-  samp_y1y0 = NULL, approx_integral = TRUE, integrate_tol = 1e-08,
-  integrate_tol_start = integrate_tol,
-  integrate_tol_hessian = integrate_tol, estimate_var = TRUE, ...)
+p_logreg_xerrors(g, y, xtilde, c = NULL, errors = "processing",
+  nondiff_pe = TRUE, nondiff_me = TRUE, constant_pe = TRUE,
+  prev = NULL, samp_y1y0 = NULL, approx_integral = TRUE,
+  estimate_var = TRUE, start_nonvar_var = c(0.01, 1),
+  lower_nonvar_var = c(-Inf, 1e-04), upper_nonvar_var = c(Inf, Inf),
+  jitter_start = 0.01, hcubature_list = list(tol = 1e-08),
+  nlminb_list = list(control = list(trace = 1, eval.max = 500, iter.max =
+  500)), hessian_list = list(method.args = list(r = 4)),
+  nlminb_object = NULL)
 }
 \arguments{
 \item{g}{Numeric vector with pool sizes, i.e. number of members in each pool.}
 
-\item{y}{Numeric vector with poolwise \code{Y} values, coded 0 if all members
-are controls and 1 if all members are cases.}
+\item{y}{Numeric vector with poolwise Y values, coded 0 if all members are
+controls and 1 if all members are cases.}
 
 \item{xtilde}{Numeric vector (or list of numeric vectors, if some pools have
-replicates) with \code{Xtilde} values.}
+replicates) with Xtilde values.}
 
-\item{c}{Numeric matrix with poolwise \strong{\code{C}} values (if any), with
-one row for each pool. Can be a vector if there is only 1 covariate.}
+\item{c}{Numeric matrix with poolwise \strong{C} values (if any), with one
+row for each pool. Can be a vector if there is only 1 covariate.}
 
-\item{errors}{Character string specifying the errors that \code{X} is subject
-to. Choices are \code{"neither"}, \code{"processing"} for processing error
+\item{errors}{Character string specifying the errors that X is subject to.
+Choices are \code{"neither"}, \code{"processing"} for processing error
 only, \code{"measurement"} for measurement error only, and \code{"both"}.}
 
 \item{nondiff_pe}{Logical value for whether to assume the processing error
@@ -47,25 +51,39 @@ case-control sampling. Can specify \code{prev} instead if it's easier.}
 
 \item{approx_integral}{Logical value for whether to use the probit
 approximation for the logistic-normal integral, to avoid numerically
-integrating \code{X}'s out of the likelihood function.}
-
-\item{integrate_tol}{Numeric value specifying the \code{tol} input to
-\code{\link{adaptIntegrate}}. Only used if \code{approx_integral = FALSE}.}
-
-\item{integrate_tol_start}{Same as \code{integrate_tol}, but applies only to
-the very first iteration of ML maximization. The first iteration tends to
-take much longer than subsequent ones, so less precise integration at the
-start can speed things up.}
-
-\item{integrate_tol_hessian}{Same as \code{integrate_tol}, but for use when
-estimating the Hessian matrix only. Sometimes more precise integration
-(i.e. smaller tolerance) than used for maximizing the likelihood helps
-prevent cases where the inverse Hessian is not positive definite.}
+integrating X's out of the likelihood function.}
 
 \item{estimate_var}{Logical value for whether to return variance-covariance
 matrix for parameter estimates.}
 
-\item{...}{Additional arguments to pass to \code{\link[stats]{nlminb}}.}
+\item{start_nonvar_var}{Numeric vector of length 2 specifying starting value
+for non-variance terms and variance terms, respectively.}
+
+\item{lower_nonvar_var}{Numeric vector of length 2 specifying lower bound for
+non-variance terms and variance terms, respectively.}
+
+\item{upper_nonvar_var}{Numeric vector of length 2 specifying upper bound for
+non-variance terms and variance terms, respectively.}
+
+\item{jitter_start}{Numeric value specifying standard deviation for mean-0
+normal jitters to add to starting values for a second try at maximizing the
+log-likelihood, should the initial call to \code{\link[stats]{nlminb}} result
+in non-convergence. Set to \code{NULL} for no second try.}
+
+\item{hcubature_list}{List of arguments to pass to
+\code{\link[cubature]{hcubature}} for numerical integration. Only used if
+\code{approx_integral = FALSE}.}
+
+\item{nlminb_list}{List of arguments to pass to \code{\link[stats]{nlminb}}
+for log-likelihood maximization.}
+
+\item{hessian_list}{List of arguments to pass to
+\code{\link[numDeriv]{hessian}} for approximating the Hessian matrix. Only
+used if \code{estimate_var = TRUE}.}
+
+\item{nlminb_object}{Object returned from \code{\link[stats]{nlminb}} in a
+prior call. Useful for bypassing log-likelihood maximization if you just want
+to re-estimate the Hessian matrix with different options.}
 }
 \value{
 List containing:
@@ -88,15 +106,23 @@ exposure. Manuscript fully describing the approach is under review.
 data(pdat1)
 
 # Estimate log-OR for X and Y adjusted for C, ignoring processing error
-fit1 <- p_logreg_xerrors(g = pdat1$g, y = pdat1$allcases,
-                         xtilde = pdat1$xtilde, c = pdat1$c,
-                         errors = "neither")
+fit1 <- p_logreg_xerrors(
+  g = pdat1$g,
+  y = pdat1$allcases,
+  xtilde = pdat1$xtilde,
+  c = pdat1$c,
+  errors = "neither"
+)
 fit1$theta.hat
 
 # Repeat, but accounting for processing error. Closer to true log-OR of 0.5.
-fit2 <- p_logreg_xerrors(g = pdat1$g, y = pdat1$allcases,
-                         xtilde = pdat1$xtilde, c = pdat1$c,
-                         errors = "processing")
+fit2 <- p_logreg_xerrors(
+  g = pdat1$g,
+  y = pdat1$allcases,
+  xtilde = pdat1$xtilde,
+  c = pdat1$c,
+  errors = "processing"
+)
 fit2$theta.hat
 
 

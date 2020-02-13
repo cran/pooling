@@ -1,39 +1,40 @@
-#' Dataset with Simulated (Y, C) Values for Examples in dfa_xerrors and
-#' logreg_xerrors
+#' Dataset for Examples in p_linreg_yerrors
 #'
-#' Includes 5,000 observations. The \code{Xtilde} values are stored as a
-#' separate list called \code{\link{dat1_xtilde}}. The data were generated with
-#' a true log-odds ratio of 0.5 for \code{X} and \code{Y}, adjusted for
-#' \code{C}. The \code{Xtilde} measurements are subject to measurement error.
+#' List containing (1) data frame with poolwise (g, Y, X1, X2) values and (2)
+#' list with replicate Y values.
 #'
-#' @name dat1
+#' @name dat_p_linreg_yerrors
 #' @docType data
 #' @source Simulated data in R.
 NULL
 #'
 #'
-#' Dataset with Simulated Xtilde Values for Examples in dfa_xerrors and
-#' logreg_xerrors
+#' Dataset for Examples in p_ndfa
 #'
-#' Includes 5,000 observations, 30 of which have replicates. The \code{(Y, C)}
-#' values are stored as a separate data frame called \code{\link{dat1}}. The
-#' data were generated with a true log-odds ratio of 0.5 for \code{X} and
-#' \code{Y}, adjusted for \code{C}. The \code{Xtilde} measurements are subject
-#' to measurement error.
+#' List containing (1) data frame with poolwise (g, Y*, Y, X, Xtilde, C) values
+#' and (2) list with replicate Xtilde values.
 #'
-#' @name dat1_xtilde
+#' @name dat_p_ndfa
 #' @docType data
 #' @source Simulated data in R.
 NULL
 #'
 #'
-#' Dataset with Simulated (Y, Xtilde, C) Values for Examples in p_dfa_xerrors
-#' and p_logreg_xerrors
+#' Dataset for Examples in p_gdfa
 #'
-#' Includes 4,999 pooled observations, with a roughly equal number of pools of
-#' size 1, 2, and 3. The data were generated with a true log-odds ratio of 0.5
-#' for \code{X} and \code{Y}, adjusted for \code{C}. The \code{Xtilde}
-#' measurements are subject to processing error.
+#' List containing (1) data frame with poolwise (g, Y, X, Xtilde) values, (2)
+#' list with replicate Xtilde values, and (3) list with C values for members of
+#' each pool.
+#'
+#' @name dat_p_gdfa
+#' @docType data
+#' @source Simulated data in R.
+NULL
+#'
+#'
+#' Dataset for Examples in p_dfa_xerrors and p_logreg_xerrors
+#'
+#' Data frame with poolwise (g, Y*, Y, Xtilde, C) values.
 #'
 #' @name pdat1
 #' @docType data
@@ -41,14 +42,10 @@ NULL
 NULL
 #'
 #'
-#' Dataset with Simulated (Y, Xtilde) Values for Examples in p_dfa_xerrors2 and
-#' p_logreg_xerrors2
+#' Dataset for Examples in p_dfa_xerrors2 and p_logreg_xerrors2
 #'
-#' Includes 248 pooled observations, with a roughly equal number of pools of
-#' size 1, 2, and 3. The individual-level \code{C} values are stored as a
-#' separate list called \code{\link{pdat2_c}}. The data were generated with
-#' a true log-odds ratio of 0.5 for \code{X} and \code{Y}, adjusted for
-#' \code{C}. The \code{Xtilde} measurements are subject to processing error.
+#' List containing (1) data frame with poolwise (g, Y, Xtilde, C) values and
+#' (2) list of C values for members of each pool.
 #'
 #' @name pdat2
 #' @docType data
@@ -56,16 +53,25 @@ NULL
 NULL
 #'
 #'
-#' Dataset with Simulated C Values for Examples in p_dfa_xerrors2 and
-#' p_logreg_xerrors2
+#' Dataset for Examples in cond_logreg
 #'
-#' Includes 248 sets of individual-level \code{C} values. The \code{(Y, Xtilde)}
-#' values are stored as a separate data frame called \code{\link{pdat2}}. The
-#' data were generated with a true log-odds ratio of 0.5 for \code{X} and
-#' \code{Y}, adjusted for \code{C}. The \code{Xtilde} measurements are subject
-#' to processing error.
+#' List containing (1) data frame with poolwise
+#' (g, X1, X0, C1.model, C0.model, C1.match, C0.match) values, (2) list of
+#' replicate Xtilde values for case pools, and (3) list of replicate Xtilde
+#' values for control pools.
 #'
-#' @name pdat2_c
+#' @name dat_cond_logreg
+#' @docType data
+#' @source Simulated data in R.
+NULL
+#'
+#'
+#' Dataset for a Paper Under Review
+#'
+#' Simulated data intended to mimic the motivating example from a paper under
+#' review. Generated under GLR with true log-OR = 0.05.
+#'
+#' @name simdata
 #' @docType data
 #' @source Simulated data in R.
 NULL

@@ -6,17 +6,17 @@
 #'
 #' @param g Numeric vector of pool sizes to include.
 #' @param d Numeric value specifying true difference in group means.
+#' @param mu1,mu2 Numeric value specifying group means. Required if
+#' \code{multiplicative = TRUE}.
 #' @param sigsq Numeric value specifying the variance of observations.
+#' @param sigsq1,sigsq2 Numeric value specifying the variance of observations
+#' for each group.
 #' @param sigsq_p Numeric value specifying the variance of processing errors.
 #' @param sigsq_m Numeric value specifying the variance of measurement errors.
 #' @param multiplicative Logical value for whether to assume multiplicative
 #' rather than additive errors.
-#' @param mu Numeric value specifying the larger of the two suspected means.
-#' Only used if \code{multiplicative = TRUE}.
-#' @param alpha Numeric value specifying significance level.
-#' @param beta Numeric value specifying beta = 1 - power.
-#' @param type Character string specifying type of t-test. Choices are
-#' \code{"two.sample"}, \code{"one.sample"}, and \code{"paired"}.
+#' @param alpha Numeric value specifying type-1 error rate.
+#' @param beta Numeric value specifying type-2 error rate.
 #' @param assay_cost Numeric value specifying cost of each assay.
 #' @param other_costs Numeric value specifying other per-subject costs.
 #' @param labels Logical value.
@@ -28,56 +28,123 @@
 #'
 #'
 #' @examples
-#' # Plot study costs vs. pool size with default settings
-#' poolcost_t()
+#' # Plot total study costs vs. pool size for d = 0.25, sigsq = 1, and costs of
+#' # $100 per assay and $0 in other per-subject costs.
+#' poolcost_t(d = 0.25, sigsq = 1)
 #'
-#' # Add processing error and other per-subject costs
-#' poolcost_t(sigsq_p = 0.2, other_costs = 0.1)
+#' # Repeat but with additive processing error and $10 in per-subject costs.
+#' poolcost_t(d = 0.25, sigsq = 1, sigsq_p = 0.5, other_costs = 10)
 #'
 #'
 #'@export
 poolcost_t <- function(g = 1: 10,
-                       d = 0.2,
-                       sigsq = 1,
+                       d = NULL,
+                       mu1 = NULL,
+                       mu2 = NULL,
+                       sigsq = NULL,
+                       sigsq1 = sigsq,
+                       sigsq2 = sigsq,
                        sigsq_p = 0,
                        sigsq_m = 0,
                        multiplicative = FALSE,
-                       mu = 1,
                        alpha = 0.05,
                        beta = 0.2,
-                       type = "two.sample",
                        assay_cost = 100,
                        other_costs = 0,
                        labels = TRUE,
                        ylim = NULL) {
 
-  # Prepare data for ggplot
-  z <- qnorm(p = 1 - beta) + qnorm(p = 1 - alpha / 2)
-  if (multiplicative) {
-    sigsq_pm <- sigsq_p * ifelse(g > 1, 1, 0) + sigsq_m +
-      sigsq_p * ifelse(g > 1, 1, 0) * sigsq_m
-    n <- ceiling(2 * z^2 / d^2 * (sigsq_pm * (mu^2 + sigsq / g) + sigsq / g))
-  } else {
-    n <- ceiling(2 * z^2 / d^2 * (sigsq / g + sigsq_p * ifelse(g > 1, 1, 0) + sigsq_m))
+  # Error checking
+  if (! is.null(d) & (! is.null(mu1) | ! is.null(mu2))) {
+    stop("Please specify d or specify mu1 and mu2")
   }
-  costs <-  2 * n * (assay_cost + g * other_costs)
-  df <- data.frame(g = g, n = n, costs = costs)
+
+  if (! multiplicative) {
+
+    # Calculate d if mu1 and mu2 are specified
+    if (is.null(d)) {
+      d <- abs(mu1 - mu2)
+    }
+
+    # Calculate variance of errors and pooled observations
+    sigsq_pm <- sigsq_p * ifelse(g > 1, 1, 0) + sigsq_m
+    sigsq_xtilde1 <- sigsq1 / g + sigsq_pm
+    sigsq_xtilde2 <- sigsq2 / g + sigsq_pm
+
+    # Calculate per-group number of assays required for each pool size
+    n <- mapply(
+      FUN = function(SIGSQ_XTILDE1, SIGSQ_XTILDE2) {
+        n_2t_unequal(
+          d = d,
+          sigsq1 = SIGSQ_XTILDE1,
+          sigsq2 = SIGSQ_XTILDE2,
+          alpha = alpha,
+          beta = beta
+        )
+      },
+      SIGSQ_XTILDE1 = sigsq_xtilde1, SIGSQ_XTILDE2 = sigsq_xtilde2
+    )
+
+  } else {
+
+    # Check that mu1 and mu2 are specified and that mu1 > mu2
+    if (is.null(mu1) | is.null(mu2)) {
+      stop("For multiplicative errors, you have to specify mu1 and mu2.")
+    } else if (mu1 <= mu2) {
+      stop("mu1 should be larger than mu2")
+    }
+
+    # Calculate variance of errors and pooled observations
+    sigsq_pm <- sigsq_m + sigsq_p * (sigsq_m + 1) * ifelse(g > 1, 1, 0)
+    sigsq_xtilde1 <- sigsq_pm * (mu1^2 + sigsq1 / g) + sigsq1 / g
+    sigsq_xtilde2 <- sigsq_pm * (mu2^2 + sigsq2 / g) + sigsq2 / g
+
+    # Calculate per-group number of assays required for each pool size
+    n <- mapply(
+      FUN = function(SIGSQ_XTILDE1, SIGSQ_XTILDE2) {
+        n_2t_unequal(
+          d = mu1 - mu2,
+          sigsq1 = SIGSQ_XTILDE1,
+          sigsq2 = SIGSQ_XTILDE2,
+          alpha = alpha,
+          beta = beta
+        )
+      },
+      SIGSQ_XTILDE1 = sigsq_xtilde1, SIGSQ_XTILDE2 = sigsq_xtilde2
+    )
+
+  }
+
+  # Prep for ggplot
+  n.assays <- 2 * n
+  costs <-  n.assays * (assay_cost + g * other_costs)
+  df <- data.frame(g = g, n.assays = n.assays, costs = costs)
   df$lab <- 0
-  df$labeltext <- paste(n, " assays", sep = "")
+  savings <- sprintf("%.0f", (1 - df$costs / df$costs[1]) * 100)
+  df$labeltext <- paste(n.assays, " total assays (", savings, "% savings)", sep = "")
+  df$labeltext[1] <- paste(n.assays[1], " total assays", sep = "")
   locs <- unique(c(1, which.min(df$costs)))
   df$labeltext[-locs] <- ""
   df$lab[locs] <- 1
 
+  # Create labels
+  if (all(df$costs > 1000)) {
+    df$costs <- df$costs / 1000
+    dollar.units <- "($1,000's)"
+  } else {
+    dollar.units <- "($)"
+  }
+
   # Default ylim
   if (is.null(ylim)) {
-    ylim <- c(0, max(costs) * 1.06)
+    ylim <- c(0, max(df$costs) * 1.06)
   }
 
   # Create plot
   p <- ggplot(df, aes_string(x = "g", y = "costs", label = "labeltext")) +
     geom_col() +
     labs(title = "Total Study Costs vs. Pool Size",
-         y = "Total costs ($)",
+         y = paste("Total costs", dollar.units),
          x = "Pool size") +
     ylim(ylim) +
     scale_x_continuous(breaks = g) +
@@ -85,11 +152,10 @@ poolcost_t <- function(g = 1: 10,
 
   # Label min
   if (labels) {
-    p <- p + geom_label_repel(point.padding = 0.3,
-                              box.padding = 1.5,
-                              direction = "y",
-                              nudge_y = max(costs) / 25,
-                              label.padding = 0.4)
+    p <- p + geom_label_repel(
+      min.segment.length = 0,
+      label.padding = 0.4
+    )
   }
   p
 
